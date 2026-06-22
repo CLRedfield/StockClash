@@ -41,7 +41,7 @@ export class GameUI {
   constructor(ctrl, { onEnd } = {}) {
     this.ctrl = ctrl; this.onEnd = onEnd;
     this.cfg = ctrl.cfg;
-    this.qty = 0;
+    this.qty = 10;
     this.cur = '';
     this._assetSet = false;
     this.chart = new CandleChart({ colorUp: this.cfg.colorUp });
@@ -161,7 +161,7 @@ export class GameUI {
 
   _buildQty() {
     // 数字输入 + ± 步进
-    this.elQty = el('input', { class: 'val', type: 'number', min: '0', value: '0',
+    this.elQty = el('input', { class: 'val', type: 'number', min: '0', value: '10',
       oninput: (e) => { this.qty = Math.max(0, Math.floor(Number(e.target.value) || 0)); } });
     const dec = el('button', { class: 'minus', text: '−', onclick: () => this._setQty(this.qty - 10) });
     const inc = el('button', { class: 'plus', text: '+', onclick: () => this._setQty(this.qty + 10) });
