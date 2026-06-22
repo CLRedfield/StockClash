@@ -1,0 +1,103 @@
+/* StockClash — Color tokens (Light theme)
+   Convention: 绿涨红跌 (green = up/gain, red = down/loss) — international default.
+   Accent: 金价金 (gold). Neutrals: cool slate. Restrained, terminal-clean. */
+:root {
+  /* ---- Brand: 金价金 gold ---- */
+  --gold-50:  #fbf7ec;
+  --gold-100: #f6ecd0;
+  --gold-200: #ecd9a3;
+  --gold-300: #dfbf6c;
+  --gold-400: #d2a847;
+  --gold-500: #c8932a;   /* primary */
+  --gold-600: #a9791d;
+  --gold-700: #855c15;
+  --gold-800: #5f4210;
+  --gold-900: #3a280a;
+
+  /* ---- Neutral: cool slate ---- */
+  --slate-0:   #ffffff;
+  --slate-25:  #fafbfc;
+  --slate-50:  #f6f7f9;
+  --slate-100: #eef1f5;
+  --slate-150: #e6eaf0;
+  --slate-200: #dde2ea;
+  --slate-300: #cbd2dd;
+  --slate-400: #98a2b3;
+  --slate-500: #667085;
+  --slate-600: #4a5568;
+  --slate-700: #344054;
+  --slate-800: #1f2a3c;
+  --slate-900: #0f1729;
+  --slate-950: #080d18;
+
+  /* ---- Up / Gain (green) ---- */
+  --green-50:  #e7f7ef;
+  --green-100: #c7eed9;
+  --green-300: #5fcf99;
+  --green-500: #0fae6e;
+  --green-600: #0a8f59;
+  --green-700: #086e46;
+
+  /* ---- Down / Loss (red) ---- */
+  --red-50:   #fdecec;
+  --red-100:  #fbd5d6;
+  --red-300:  #f2898d;
+  --red-500:  #e5484d;
+  --red-600:  #cd363b;
+  --red-700:  #a32a2e;
+
+  /* ---- Market category hues ---- */
+  --mkt-cn:     #e5484d;  /* 大 A */
+  --mkt-hk:     #2b6cff;  /* 港股 */
+  --mkt-us:     #6b4cff;  /* 美股 */
+  --mkt-crypto: #f7931a;  /* 虚拟货币 */
+
+  /* ---- Status ---- */
+  --info-500:  #2b6cff;
+  --info-50:   #eaf1ff;
+  --warn-500:  #e8920c;
+  --warn-50:   #fdf2dd;
+  --danger-500: var(--red-500);
+  --success-500: var(--green-500);
+
+  /* ============ Semantic aliases ============ */
+  /* Surfaces */
+  --surface-app:    var(--slate-50);
+  --surface-card:   var(--slate-0);
+  --surface-sunken: var(--slate-100);
+  --surface-hover:  var(--slate-50);
+  --surface-inset:  var(--slate-25);
+
+  /* Text */
+  --text-primary:   var(--slate-900);
+  --text-secondary: var(--slate-600);
+  --text-tertiary:  var(--slate-400);
+  --text-on-accent: #1a1205;        /* dark ink reads premium on gold */
+  --text-link:      var(--gold-700);
+
+  /* Borders */
+  --border-subtle:  var(--slate-150);
+  --border-default: var(--slate-200);
+  --border-strong:  var(--slate-300);
+  --border-focus:   var(--gold-500);
+
+  /* Accent */
+  --accent:        var(--gold-500);
+  --accent-hover:  var(--gold-600);
+  --accent-press:  var(--gold-700);
+  --accent-soft:   var(--gold-50);
+  --accent-soft-border: var(--gold-200);
+  --on-accent:     var(--text-on-accent);
+
+  /* Price / P&L */
+  --price-up:        var(--green-600);
+  --price-up-soft:   var(--green-50);
+  --price-up-border: var(--green-100);
+  --price-down:        var(--red-500);
+  --price-down-soft:   var(--red-50);
+  --price-down-border: var(--red-100);
+  --price-flat:        var(--slate-500);
+
+  /* Focus ring */
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--gold-500) 35%, transparent);
+}

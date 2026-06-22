@@ -1,0 +1,5 @@
+/* StockClash — webfonts
+   Geometric sans (Space Grotesk) for Latin display, Noto Sans SC for Chinese,
+   JetBrains Mono for tabular numbers. Loaded from Google Fonts CDN.
+   No brand font existed (invented system) — swap these for self-hosted files anytime. */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
