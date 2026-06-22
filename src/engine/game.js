@@ -153,8 +153,21 @@ export class GameEngine {
     const price = this.market.price;
     let res;
     switch (action.kind) {
-      case 'buy': res = p.pf.buy(action.qty, price); break;
-      case 'sell': res = p.pf.sell(action.qty, price); break;
+      case 'buy': {
+        // qty:'max' = 全仓做多：用现金能买的最大整数股（精确含手续费，覆盖空头后转多）
+        const q = action.qty === 'max' ? p.pf.maxBuyQty(price) : action.qty;
+        if (action.qty === 'max' && q <= 0) { res = { ok: false, msg: '现金不足，无法买入' }; break; }
+        res = p.pf.buy(q, price); break;
+      }
+      case 'sell': {
+        // qty:'max' = 全仓做空：先平掉多头，再做空到约 1× 净值敞口（保证金内，避免被拒）
+        let q = action.qty;
+        if (q === 'max') {
+          q = p.pf.shares + Math.floor(p.pf.netWorth(price) / price);
+          if (q <= 0) { res = { ok: false, msg: '已是满仓做空' }; break; }
+        }
+        res = p.pf.sell(q, price); break;
+      }
       case 'flat': res = p.pf.flatten(price); break;
       case 'loan': res = p.pf.borrow(action.amount, price); break;
       case 'repay': res = p.pf.repay(action.amount); break;

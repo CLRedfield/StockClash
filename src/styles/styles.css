@@ -120,6 +120,7 @@ input.sc-num-field {
 .icon-btn.outline { background: var(--surface-card); color: var(--text-primary); border-color: var(--border-default); }
 .icon-btn.accent { background: var(--accent-soft); color: var(--accent-press); border-color: var(--accent-soft-border); }
 .icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.icon-btn.muted { color: var(--text-tertiary); }
 
 /* ---------------------------------------------------------------- 徽章 Badge */
 .badge {

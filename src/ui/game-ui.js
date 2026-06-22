@@ -4,9 +4,10 @@ import { toast, openOverlay, promptNumber } from './prompts.js';
 import { icon } from './icons.js';
 import { CandleChart } from './chart.js';
 import { fmtPrice, fmtMoney, fmtCompact, fmtPct } from './format.js';
-import { MARKETS } from '../engine/constants.js';
+import { MARKETS, FEE_PROFILE } from '../engine/constants.js';
 import { PROPS, needsTarget } from '../engine/props.js';
 import { badge, statTile, priceTag, countdown, leaderboardRow } from './components.js';
+import { playSfx, unlockAudio, isSoundOn, toggleSound } from './sound.js';
 
 // 道具 → 设计系统类别 + Lucide 图标（不再用 emoji）
 const PROP_META = {
@@ -51,7 +52,7 @@ export class GameUI {
     this._unsubs.push(ctrl.on('end', (r) => { this.onEnd?.(r); }));
   }
 
-  mountInto(parent) { clear(parent).appendChild(this.root); this.chart._resize(); this.render(); }
+  mountInto(parent) { clear(parent).appendChild(this.root); unlockAudio(); this.chart._resize(); this.render(); }
   destroy() { this._unsubs.forEach((u) => { try { u(); } catch (e) {} }); this.chart.destroy(); }
 
   _build() {
@@ -67,6 +68,8 @@ export class GameUI {
     this.countdown = countdown({ size: 'md' });
     this.elClosed = badge('休市中', 'warn', { dot: true });
     this.elClosed.style.display = 'none';
+    this.btnMute = el('button', { class: 'icon-btn ghost', title: '音效开关', 'aria-label': '音效开关', onclick: () => this._toggleMute() });
+    this._paintMute();
     const top = el('div', { class: 'game-top' }, [
       el('div', { class: 'gt-left' }, [
         el('div', { class: 'instrument' }, [
@@ -76,7 +79,7 @@ export class GameUI {
         this.priceTag.wrap,
         this.elInsider,
       ]),
-      el('div', { class: 'gt-right' }, [this.elClosed, this.countdown.wrap]),
+      el('div', { class: 'gt-right' }, [this.btnMute, this.elClosed, this.countdown.wrap]),
     ]);
 
     // ---- 主体：左（图+HUD+操作） / 右（排行+道具） ----
@@ -108,9 +111,9 @@ export class GameUI {
       this._quickBtns.push(buy, sell);
       this.quickPanel.appendChild(el('div', { class: 'quick-row' }, [buy, sell]));
     });
-    // 最底部：全买 / 全卖
-    const buyAll = el('button', { class: 'btn btn-up sm qa-btn', onclick: () => this._buyAll() }, [document.createTextNode('全买')]);
-    const sellAll = el('button', { class: 'btn btn-down sm qa-btn', onclick: () => this._sellAll() }, [document.createTextNode('全卖')]);
+    // 最底部：全仓做多 / 全仓做空（一键满仓；想清仓回现金请用「一键平仓」）
+    const buyAll = el('button', { class: 'btn btn-up sm qa-btn', onclick: () => this._buyAll() }, [document.createTextNode('全仓做多')]);
+    const sellAll = el('button', { class: 'btn btn-down sm qa-btn', onclick: () => this._sellAll() }, [document.createTextNode('全仓做空')]);
     this._quickBtns.push(buyAll, sellAll);
     this.quickPanel.appendChild(el('div', { class: 'quick-row quick-all' }, [buyAll, sellAll]));
     this.btnQuick = el('button', { class: 'btn btn-secondary quick-toggle', onclick: () => this._toggleQuick() }, [
@@ -174,31 +177,32 @@ export class GameUI {
 
   // ---------- 操作 ----------
   _setQty(q) { this.qty = Math.max(0, Math.floor(q)); this.elQty.value = String(this.qty); }
+  // 按当前真实买入费率估算可买上限（道具免手续费时为 0）
+  _buyFeeRate(pub, pv) {
+    if (pv && pv.feeFree > 0) return 0;
+    const base = FEE_PROFILE[pub?.asset?.marketKey]?.buy ?? 0;
+    return base * (this.cfg.feeScale ?? 1);
+  }
   _fillPct(pct) {
     const pub = this.ctrl.public(); const pv = this.ctrl.private(); if (!pv || !pub) return;
     const price = pub.prices[pub.prices.length - 1];
-    const max = Math.floor(pv.cash / (price * 1.002));
+    const max = Math.floor(pv.cash / (price * (1 + this._buyFeeRate(pub, pv))));
     this._setQty(Math.floor(max * pct));
   }
-  _do(action) { const r = this.ctrl.act(action); if (r && !r.ok && r.msg) toast(r.msg, 'error'); else if (r && r.ok) this.render(); return r; }
+  _paintMute() { clear(this.btnMute); this.btnMute.appendChild(icon(isSoundOn() ? 'volume-2' : 'volume-x', { size: 18 })); this.btnMute.classList.toggle('muted', !isSoundOn()); }
+  _toggleMute() { const on = toggleSound(); this._paintMute(); if (on) playSfx('click'); }
+
+  _do(action) {
+    const r = this.ctrl.act(action);
+    if (r && !r.ok) { if (r.msg) toast(r.msg, 'error'); playSfx('error'); }
+    else if (r && r.ok) { if (action.kind === 'buy') playSfx('buy'); else if (action.kind === 'sell') playSfx('sell'); this.render(); }
+    return r;
+  }
   _buy() { if (this.qty <= 0) return toast('请输入股数', 'error'); this._do({ kind: 'buy', qty: this.qty }); }
   _sell() { if (this.qty <= 0) return toast('请输入股数', 'error'); this._do({ kind: 'sell', qty: this.qty }); }
-  _buyAll() {
-    const pub = this.ctrl.public(); const pv = this.ctrl.private(); if (!pub || !pv) return;
-    const price = pub.prices[pub.prices.length - 1];
-    const qty = Math.floor(pv.cash / (price * 1.002));
-    if (qty <= 0) return toast('现金不足，无法买入', 'error');
-    this._do({ kind: 'buy', qty });
-  }
-  _sellAll() {
-    const pub = this.ctrl.public(); const pv = this.ctrl.private(); if (!pub || !pv) return;
-    const price = pub.prices[pub.prices.length - 1];
-    // 先清掉多头，再用现金等额做空（约 1× 敞口，避免过度杠杆被拒）
-    const longPart = pv.shares > 0 ? pv.shares : 0;
-    const qty = longPart + Math.floor(pv.cash / (price * 1.002));
-    if (qty <= 0) return toast('无可卖数量', 'error');
-    this._do({ kind: 'sell', qty });
-  }
+  // 全仓做多 / 全仓做空：数量交由引擎按权威持仓精确计算（含手续费/保证金，联机同样正确）
+  _buyAll() { this._do({ kind: 'buy', qty: 'max' }); }
+  _sellAll() { this._do({ kind: 'sell', qty: 'max' }); }
   async _loan() {
     const pv = this.ctrl.private(); if (!pv) return;
     if (pv.debt > 0) return toast('欠债时不能再贷款', 'error');
@@ -339,12 +343,12 @@ export class GameUI {
     if (e.kind === 'crash' || e.kind === 'pump') {
       this.chart.root.classList.add(e.kind);
       setTimeout(() => this.chart.root.classList.remove(e.kind), 600);
-      if (e.kind === 'crash') toast('黑天鹅！全场砸盘', 'down');
-      else toast('利好突袭！全场拉升', 'up');
+      if (e.kind === 'crash') { toast('黑天鹅！全场砸盘', 'down'); playSfx('crash'); }
+      else { toast('利好突袭！全场拉升', 'up'); playSfx('pump'); }
     }
     if (e.id !== this.ctrl.myId) return;
-    if (e.kind === 'liquidate') toast(e.bankrupt ? '你已爆仓破产！' : '触发强制平仓', 'error', 2200);
-    else if (e.kind === 'shield') toast('止损盾抵消了一次爆仓', 'info');
-    else if (e.kind === 'getprop') { const d = PROPS[e.propId]; if (d) toast(`获得道具：${d.name}`, 'accent', 1400); }
+    if (e.kind === 'liquidate') { toast(e.bankrupt ? '你已爆仓破产！' : '触发强制平仓', 'error', 2200); playSfx('liquidate'); }
+    else if (e.kind === 'shield') { toast('止损盾抵消了一次爆仓', 'info'); playSfx('prop'); }
+    else if (e.kind === 'getprop') { const d = PROPS[e.propId]; if (d) { toast(`获得道具：${d.name}`, 'accent', 1400); playSfx('prop'); } }
   }
 }

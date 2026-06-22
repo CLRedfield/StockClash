@@ -4,6 +4,7 @@ import { icon } from './icons.js';
 import { fmtCompact, fmtPct } from './format.js';
 import { MARKETS } from '../engine/constants.js';
 import { badge, statTile, leaderboardRow } from './components.js';
+import { playSfx } from './sound.js';
 
 export function showSettlement(parent, { results, asset, cur, prices, myId, onRematch, onExit, rematchLabel = '再来一局' }) {
   clear(parent);
@@ -12,6 +13,9 @@ export function showSettlement(parent, { results, asset, cur, prices, myId, onRe
   const champ = results[0];
   const champMe = champ.id === myId;
   const champUp = champ.ret >= 0;
+
+  // 胜负音效（仅当本人参赛；观战不响）
+  if (results.some((r) => r.id === myId)) setTimeout(() => playSfx(champMe ? 'win' : 'lose'), 120);
 
   // ---- 股神横幅 ----
   root.appendChild(el('div', { class: 'winner-banner' }, [
