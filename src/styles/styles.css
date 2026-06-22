@@ -390,6 +390,25 @@ input.sc-num-field {
 .prop-slot.empty { border: 1.5px dashed var(--border-strong); background: var(--surface-inset); cursor: default; }
 .prop-slot.empty:hover { transform: none; }
 
+/* 道具悬浮说明框（fixed 定位，避免被卡片 overflow 裁切） */
+.prop-tip {
+  position: fixed; top: 0; left: 0; z-index: var(--z-toast); pointer-events: none;
+  width: max-content; max-width: 230px; min-width: 130px; padding: 9px 11px;
+  background: var(--surface-card); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.prop-tip.show { opacity: 1; visibility: visible; transform: none; }
+.prop-tip .pt-head { display: flex; align-items: center; gap: 6px; }
+.prop-tip .pt-name { font-family: var(--font-display); font-weight: var(--weight-bold); font-size: var(--text-sm); color: var(--text-primary); }
+.prop-tip .pt-rar { margin-left: auto; font-size: var(--text-2xs); font-weight: 700; padding: 1px 7px; border-radius: var(--radius-pill); white-space: nowrap; }
+.prop-tip .pt-rar.common { color: var(--slate-600); background: var(--slate-100); }
+.prop-tip .pt-rar.rare   { color: var(--info-500); background: color-mix(in srgb, var(--info-500) 12%, white); }
+.prop-tip .pt-rar.epic   { color: var(--gold-700); background: var(--gold-50); }
+.prop-tip .pt-desc { font-size: var(--text-xs); color: var(--text-secondary); line-height: 1.5; margin-top: 5px; }
+.prop-tip .pt-use { font-size: var(--text-2xs); color: var(--text-tertiary); margin-top: 5px; }
+
 /* ---------------------------------------------------------------- 弹层 / 弹窗 Dialog */
 #overlay-root, #toast-root { position: fixed; inset: 0; pointer-events: none; z-index: var(--z-modal); }
 .overlay-back {

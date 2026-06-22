@@ -53,11 +53,15 @@ export class GameUI {
   }
 
   mountInto(parent) { clear(parent).appendChild(this.root); unlockAudio(); this.chart._resize(); this.render(); }
-  destroy() { this._unsubs.forEach((u) => { try { u(); } catch (e) {} }); this.chart.destroy(); }
+  destroy() { this._unsubs.forEach((u) => { try { u(); } catch (e) {} }); this.chart.destroy(); if (this._propTip) { this._propTip.remove(); this._propTip = null; } }
 
   _build() {
     this.root = el('div', { class: 'sc-screen game-screen' });
     const wrap = el('div', { class: 'game-wrap' });
+
+    // 道具悬浮说明框（挂到 body，避免被卡片裁切）
+    this._propTip = el('div', { class: 'prop-tip' });
+    document.body.appendChild(this._propTip);
 
     // ---- 顶栏 ----
     this.elMkBadge = badge('', 'neutral');
@@ -307,6 +311,11 @@ export class GameUI {
 
   _renderProps(props) {
     if (!this.cfg.propMode) return;
+    // 仅在道具实际变化时重建，避免每 tick 销毁 DOM 打断悬浮说明框
+    const sig = props.slice().sort().join(',');
+    if (sig === this._lastPropsSig) return;
+    this._lastPropsSig = sig;
+    this._hidePropTip();
     clear(this.elProps);
     this.elProps.appendChild(el('span', { class: 'eyebrow', text: '道具栏' }));
     const slotsWrap = el('div', { class: 'slots' });
@@ -316,14 +325,45 @@ export class GameUI {
     const ids = Object.keys(counts);
     ids.forEach((id) => {
       const d = PROPS[id]; const m = PROP_META[id]; if (!d || !m) return;
-      const slot = el('button', { class: 'prop-slot', title: `${d.name} · ${d.desc}`, style: { '--cat': m.color },
-        onclick: () => this._useProp(id) }, [icon(m.ico, { size: 20 })]);
+      const slot = el('button', { class: 'prop-slot', 'aria-label': `${d.name}：${d.desc}`, style: { '--cat': m.color },
+        onclick: () => { this._hidePropTip(); this._useProp(id); },
+        onmouseenter: () => this._showPropTip(slot, id),
+        onmouseleave: () => this._hidePropTip(),
+      }, [icon(m.ico, { size: 20 })]);
       if (counts[id] > 1) slot.appendChild(el('span', { class: 'count', text: String(counts[id]) }));
       slotsWrap.appendChild(slot);
     });
     const empties = Math.max(0, (this.cfg.propSlots || 3) - ids.length);
     for (let i = 0; i < empties; i++) slotsWrap.appendChild(el('div', { class: 'prop-slot empty' }));
     this.elProps.appendChild(slotsWrap);
+  }
+
+  _hidePropTip() { if (this._propTip) this._propTip.classList.remove('show'); }
+  _showPropTip(slot, id) {
+    const d = PROPS[id], m = PROP_META[id], tip = this._propTip;
+    if (!d || !m || !tip) return;
+    const RAR = { common: '普通', rare: '稀有', epic: '史诗' };
+    const usage = d.target === 'enemy' ? '点按后选择对手使用'
+      : d.target === 'all' ? '点按影响全场'
+      : '点按立即生效';
+    clear(tip);
+    tip.appendChild(el('div', { class: 'pt-head' }, [
+      el('span', { class: 'pt-ico', style: { color: m.color } }, [icon(m.ico, { size: 16 })]),
+      el('span', { class: 'pt-name', text: d.name }),
+      el('span', { class: `pt-rar ${d.rarity}`, text: RAR[d.rarity] || '' }),
+    ]));
+    tip.appendChild(el('div', { class: 'pt-desc', text: d.desc }));
+    tip.appendChild(el('div', { class: 'pt-use', text: usage }));
+    // 定位：默认在道具上方居中，空间不足则放到下方；左右夹在视口内
+    const r = slot.getBoundingClientRect();
+    const tr = tip.getBoundingClientRect();
+    let left = r.left + r.width / 2 - tr.width / 2;
+    left = Math.max(8, Math.min(window.innerWidth - tr.width - 8, left));
+    let top = r.top - tr.height - 8;
+    if (top < 8) top = r.bottom + 8;
+    tip.style.left = Math.round(left) + 'px';
+    tip.style.top = Math.round(top) + 'px';
+    tip.classList.add('show');
   }
 
   _renderBoard(lb, baseCash) {
