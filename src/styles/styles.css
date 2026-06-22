@@ -396,10 +396,9 @@ input.sc-num-field {
   width: max-content; max-width: 230px; min-width: 130px; padding: 9px 11px;
   background: var(--surface-card); border: 1px solid var(--border-strong);
   border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
-  opacity: 0; visibility: hidden; transform: translateY(4px);
-  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+  opacity: 0; visibility: hidden;   /* 无过渡：悬停即时显示 */
 }
-.prop-tip.show { opacity: 1; visibility: visible; transform: none; }
+.prop-tip.show { opacity: 1; visibility: visible; }
 .prop-tip .pt-head { display: flex; align-items: center; gap: 6px; }
 .prop-tip .pt-name { font-family: var(--font-display); font-weight: var(--weight-bold); font-size: var(--text-sm); color: var(--text-primary); }
 .prop-tip .pt-rar { margin-left: auto; font-size: var(--text-2xs); font-weight: 700; padding: 1px 7px; border-radius: var(--radius-pill); white-space: nowrap; }
