@@ -2,7 +2,7 @@
 import { el, clear } from './dom.js';
 import { icon } from './icons.js';
 import { wordmark, badge } from './components.js';
-import { DEFAULTS, PRESETS, AI_NAMES, nextDiff, deriveWindow, applyClassicRules } from '../engine/constants.js';
+import { DEFAULTS, PRESETS, AI_NAMES, nextDiff, deriveWindow, applyClassicRules, applyTycoonRules } from '../engine/constants.js';
 import { GameEngine } from '../engine/game.js';
 import { pickAsset, randSeed } from '../engine/market.js';
 import { renderRoomView } from './room.js';
@@ -21,16 +21,19 @@ export class Lobby {
   }
 
   _freshRoom(mode = 'classic') {
+    const tycoon = mode === 'tycoon';
     const room = {
       ...structuredClone(DEFAULTS),
       markets: ['cn'],
       totalSeats: 4,
       aiDifficulties: {},
-      players: [{ id: 'me', name: this.name }],
-      hostId: 'me', myId: 'me', isLocal: true,
+      // 懂王模式：房主（你）专心控盘、不占座位；座位全是 AI 散户
+      players: tycoon ? [] : [{ id: 'me', name: this.name }],
+      hostId: 'me', hostName: this.name, myId: 'me', isLocal: true,
       roomMode: mode,
     };
     if (mode === 'classic') applyClassicRules(room);
+    if (tycoon) applyTycoonRules(room);
     return room;
   }
 
@@ -93,7 +96,7 @@ export class Lobby {
     const r = this.room;
     const state = {
       isLocal: true, canEdit: true, canKick: false, canSwap: false,
-      roomMode: r.roomMode,
+      roomMode: r.roomMode, tycoon: r.roomMode === 'tycoon', tycoonHostName: r.hostName || this.name,
       markets: r.markets, preset: r.preset, durationSec: r.durationSec, windowLabel: r.windowLabel,
       initialCash: r.initialCash, cashMode: r.cashMode, cashMultiple: r.cashMultiple, feeScale: r.feeScale, loanOrigination: r.loanOrigination, loanAccrual: r.loanAccrual,
       loanAccrualSec: r.loanAccrualSec, maxLeverage: r.maxLeverage, blindMode: r.blindMode, propMode: r.propMode,
@@ -107,7 +110,16 @@ export class Lobby {
   _roomHandlers(rerender) {
     const r = this.room;
     return {
-      onRoomMode: (mode) => { if (r.roomMode === mode) return; r.roomMode = mode; if (mode === 'classic') applyClassicRules(r); rerender(); },
+      onRoomMode: (mode) => {
+        if (r.roomMode === mode) return;
+        const wasT = r.roomMode === 'tycoon', isT = mode === 'tycoon';
+        r.roomMode = mode;
+        if (isT && !wasT) r.players = (r.players || []).filter((p) => p.id !== 'me');
+        else if (!isT && wasT) r.players = [{ id: 'me', name: this.name }, ...(r.players || [])];
+        if (mode === 'classic') applyClassicRules(r);
+        if (mode === 'tycoon') applyTycoonRules(r);
+        rerender();
+      },
       onMarketToggle: (k) => { const i = r.markets.indexOf(k); if (i >= 0) { if (r.markets.length > 1) r.markets.splice(i, 1); } else r.markets.push(k); rerender(); },
       onPreset: (key) => { const p = PRESETS.find((x) => x.key === key); if (p) { r.preset = key; r.durationSec = p.durationSec; r.tickSec = p.tickSec; r.windowLabel = p.windowLabel; } rerender(); },
       onEditCash: async () => { const v = await promptNumber({ title: '初始资金', value: r.initialCash, min: 1000, step: 10000 }); if (v) { r.initialCash = v; rerender(); } },
@@ -140,13 +152,16 @@ export class Lobby {
 
   _startLocal() {
     const r = this.room;
-    const aiNames = sample(AI_NAMES, Math.max(0, r.totalSeats - 1));
-    const seats = [{ id: 'me', name: this.name, isHuman: true }];
-    for (let i = 1; i < r.totalSeats; i++) seats.push({ id: 'ai' + i, name: aiNames[i - 1] || ('AI' + i), isHuman: false, diff: r.aiDifficulties[i] || 'normal' });
+    const tycoon = r.roomMode === 'tycoon';
+    const cap = r.totalSeats;
+    const aiNames = sample(AI_NAMES, cap);
+    const seats = [];
+    if (!tycoon) seats.push({ id: 'me', name: this.name, isHuman: true });   // 懂王模式：你不下场，全是 AI 散户
+    for (let i = seats.length; i < cap; i++) seats.push({ id: 'ai' + i, name: aiNames[i] || ('AI' + i), isHuman: false, diff: r.aiDifficulties[i] || 'normal' });
     const asset = pickAsset(r.markets);
     const seed = randSeed();
     const engine = new GameEngine({ cfg: r, seats, asset, seed });
-    const ctrl = new LocalController(engine, 'me');
+    const ctrl = new LocalController(engine, 'me', { tycoonHost: tycoon });
     const ui = new GameUI(ctrl, { onEnd: (results) => this._showResult(engine, results, ui) });
     ui.mountInto(this.root);
     engine.start();
@@ -156,7 +171,7 @@ export class Lobby {
     ui.destroy();
     showSettlement(this.root, {
       results, asset: engine.asset, cur: engine.market.cur,
-      prices: engine.market.prices.slice(0, engine.market.cursor + 1), myId: 'me',
+      prices: engine.market.revealedPrices(), myId: 'me',
       onRematch: () => { this.screen = 'local'; this.render(); },
       onExit: () => this.show(),
     });

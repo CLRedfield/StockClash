@@ -91,6 +91,32 @@ export function applyClassicRules(room) {
   return room;
 }
 
+// 懂王模式：房主实时控盘 —— 在原有走势上叠加 ±50% 的额外趋势。
+// 默认 2s 刷新一根 K 线、跑 20s 歇 5s 休市；开局钱 = 开盘 1 股 ×100；开启道具。
+// 房主（懂王）不参与买卖、不上榜，专心控盘；所有座位都是其他玩家 + AI。
+export const TYCOON_RULES = {
+  cashMode: 'multiple', cashMultiple: 100,
+  opTimeMode: true, opTimeSec: 2,          // 2 秒刷新一根 K 线
+  recessMode: true, recessRun: 20, recessRest: 5,  // 跑 20s 歇 5s
+  durationSec: 180, windowLabel: '3 个月', preset: 'custom',
+  propMode: true,                          // 开启道具（内幕在懂王模式下自动剔除）
+  blindMode: false,
+};
+export function applyTycoonRules(room) { Object.assign(room, TYCOON_RULES); return room; }
+
+// 懂王控盘：额外趋势幅度上限（每根 K 线在原走势上叠加的涨跌，±50%）
+export const TYCOON_BIAS_MAX = 0.5;
+// 控盘台快捷档位（额外趋势 / 每根 K 线）
+export const TYCOON_PRESETS = [
+  { v: -0.5,  label: '暴跌' },
+  { v: -0.25, label: '大跌' },
+  { v: -0.1,  label: '小跌' },
+  { v: 0,     label: '横盘' },
+  { v: 0.1,   label: '小涨' },
+  { v: 0.25,  label: '大涨' },
+  { v: 0.5,   label: '暴涨' },
+];
+
 // 一局时长拖条范围：1–15 分钟，步进 30 秒（始终为 10 的倍数，便于休市 ×1.5 精确对齐）
 export const DURATION_MIN = 60;
 export const DURATION_MAX = 900;

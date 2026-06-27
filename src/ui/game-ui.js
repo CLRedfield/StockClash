@@ -4,9 +4,9 @@ import { toast, openOverlay, promptNumber } from './prompts.js';
 import { icon } from './icons.js';
 import { CandleChart } from './chart.js';
 import { fmtPrice, fmtMoney, fmtCompact, fmtPct } from './format.js';
-import { MARKETS, FEE_PROFILE } from '../engine/constants.js';
+import { MARKETS, FEE_PROFILE, TYCOON_PRESETS } from '../engine/constants.js';
 import { PROPS, needsTarget } from '../engine/props.js';
-import { badge, statTile, priceTag, countdown, leaderboardRow } from './components.js';
+import { badge, statTile, priceTag, countdown, leaderboardRow, tycoonTraderRow } from './components.js';
 import { playSfx, unlockAudio, isSoundOn, toggleSound } from './sound.js';
 
 // 道具 → 设计系统类别 + Lucide 图标（不再用 emoji）
@@ -27,20 +27,32 @@ const PROP_META = {
 
 // 本地引擎控制器（房主端 / 单机端复用）
 export class LocalController {
-  constructor(engine, myId, { spectator = false } = {}) {
-    this.engine = engine; this.myId = myId; this.spectator = spectator; this.cfg = engine.cfg;
+  constructor(engine, myId, { spectator = false, tycoonHost = false } = {}) {
+    this.engine = engine; this.myId = myId; this.spectator = spectator; this.tycoonHost = tycoonHost; this.cfg = engine.cfg;
   }
   on(ev, fn) { return this.engine.on(ev, fn); }
   public() { return this.engine.publicState(); }
   private() { return this.engine.privateState(this.myId); }
   players() { return this.engine.players.map((p) => ({ id: p.id, name: p.name })); }
-  act(action) { if (this.spectator) return { ok: false, msg: '观战中无法操作' }; return this.engine.act(this.myId, action); }
+  act(action) { if (this.spectator || this.tycoonHost) return { ok: false, msg: '懂王专心控盘，不参与买卖' }; return this.engine.act(this.myId, action); }
+  // 懂王控盘
+  get bias() { return this.engine.bias || 0; }
+  setBias(pct) { return this.engine.setBias(pct); }
+  // 上帝视角：每个散户的多空持仓与净值
+  tycoonBoard() {
+    const price = this.engine.market.price;
+    return this.engine.players.map((p) => {
+      const s = p.pf.snapshot(price);
+      return { id: p.id, name: p.name, isHuman: p.isHuman, shares: s.shares, nw: s.netWorth, debt: s.debt, bankrupt: p.pf.bankrupt };
+    }).sort((a, b) => b.nw - a.nw);
+  }
 }
 
 export class GameUI {
   constructor(ctrl, { onEnd } = {}) {
     this.ctrl = ctrl; this.onEnd = onEnd;
     this.cfg = ctrl.cfg;
+    this.tycoonHost = !!ctrl.tycoonHost;   // 懂王房主：显示控盘台而非买卖面板
     this.qty = 10;
     this.cur = '';
     this._assetSet = false;
@@ -88,6 +100,25 @@ export class GameUI {
 
     // ---- 主体：左（图+HUD+操作） / 右（排行+道具） ----
     const chartCard = el('div', { class: 'card chart-card' }, [el('div', { class: 'card-body' }, [this.chart.root])]);
+
+    // 懂王（房主）控盘界面：图 + 控盘台（左）/ 散户上帝视角（右），无买卖 / HUD / 道具
+    if (this.tycoonHost) {
+      const consoleCard = this._buildTycoonConsole();
+      this.elBoard = el('div', { class: 'board-list' });
+      const boardCard = el('div', { class: 'card' }, [el('div', { class: 'card-body tight' }, [
+        el('div', { class: 'board' }, [
+          el('div', { class: 'board-head' }, [el('span', { class: 'eyebrow', text: '散户持仓 · 上帝视角' }), icon('eye', { size: 14 })]),
+          this.elBoard,
+        ]),
+      ])]);
+      wrap.appendChild(top);
+      wrap.appendChild(el('div', { class: 'game-main' }, [
+        el('div', { class: 'game-col left' }, [chartCard, consoleCard]),
+        el('div', { class: 'game-col right' }, [boardCard]),
+      ]));
+      this.root.appendChild(wrap);
+      return;
+    }
 
     this.stCash = statTile('现金');
     this.stPos = statTile('持仓');
@@ -179,6 +210,95 @@ export class GameUI {
     this.btnQuick.classList.toggle('active', this.quickOpen);
   }
 
+  // ---------- 懂王控盘台 ----------
+  _buildTycoonConsole() {
+    this.elBiasVal = el('div', { class: 'ty-bias-val flat', text: '0%' });
+    this.biasSlider = el('input', { class: 'sc-slider ty-slider', type: 'range', min: '-50', max: '50', step: '1', value: '0',
+      // 拖动时只更新读数（本地），松手（change）才真正下发，避免联机刷屏
+      oninput: (e) => this._paintBias(Number(e.target.value) / 100),
+      onchange: (e) => this._setBias(Number(e.target.value) / 100) });
+    this._tyPresetBtns = [];
+    const presetRow = el('div', { class: 'ty-presets' }, TYCOON_PRESETS.map((p) => {
+      const b = el('button', { class: `ty-preset ${p.v > 0 ? 'up' : p.v < 0 ? 'down' : 'flat'}`, onclick: () => this._setBias(p.v) }, [
+        el('span', { class: 'tp-l', text: p.label }),
+        el('span', { class: 'tp-v', text: (p.v > 0 ? '+' : '') + Math.round(p.v * 100) + '%' }),
+      ]);
+      b._biasV = p.v;
+      this._tyPresetBtns.push(b);
+      return b;
+    }));
+    return el('div', { class: 'card ty-console' }, [el('div', { class: 'card-body' }, [
+      el('div', { class: 'ty-head' }, [icon('crown', { size: 16 }), el('span', { class: 'ty-title', text: '控盘台' }),
+        el('span', { class: 'ty-sub', text: '额外趋势 · 叠加到原走势 · 每根 K 线' })]),
+      el('div', { class: 'ty-readout' }, [this.elBiasVal]),
+      this.biasSlider,
+      el('div', { class: 'ty-scale' }, [el('span', { text: '暴跌 -50%' }), el('span', { text: '横盘' }), el('span', { text: '+50% 暴涨' })]),
+      presetRow,
+      el('button', { class: 'btn btn-secondary ty-reset', onclick: () => this._setBias(0) }, [document.createTextNode('回到横盘 0%')]),
+      el('div', { class: 'trade-hint', text: '停在 0 就是正常行情；拨动后持续生效，直到你再改' }),
+    ])]);
+  }
+  _setBias(pct) {
+    const b = this.ctrl.setBias(pct);   // 引擎已 clamp
+    this._paintBias(b);
+    playSfx(b > 0 ? 'buy' : b < 0 ? 'sell' : 'click');
+  }
+  _paintBias(b) {
+    const pc = Math.round((b || 0) * 100);
+    if (this.elBiasVal) {
+      this.elBiasVal.textContent = (pc > 0 ? '+' : '') + pc + '%';
+      this.elBiasVal.className = 'ty-bias-val ' + (pc > 0 ? 'up' : pc < 0 ? 'down' : 'flat');
+    }
+    if (this.biasSlider) {
+      this.biasSlider.value = String(pc);
+      this.biasSlider.style.setProperty('--fill', (((pc + 50) / 100) * 100).toFixed(1) + '%');
+    }
+    (this._tyPresetBtns || []).forEach((btn) => btn.classList.toggle('active', Math.abs(btn._biasV - (b || 0)) < 1e-6));
+  }
+  _renderTycoon() {
+    const pub = this.ctrl.public(); if (!pub) return;
+    this.cur = pub.cur;
+    const prices = pub.prices; const price = prices[prices.length - 1];
+    if (!this._assetSet) {
+      const mk = MARKETS[pub.asset.marketKey] || { name: '', key: 'cn' };
+      this.elMkBadge.className = 'badge ' + pub.asset.marketKey;
+      this.elMkBadge.textContent = mk.name;
+      this.elTitle.textContent = pub.asset.name;
+      this.elSub.textContent = '懂王控盘 · 你说涨就涨';
+      this._assetSet = true;
+      this._paintBias(this.ctrl.bias);
+    }
+    const ret0 = prices.length > 1 ? price / prices[0] - 1 : 0;
+    const dir = ret0 > 0 ? 'up' : ret0 < 0 ? 'down' : 'flat';
+    this.priceTag.set(pub.cur + fmtPrice(price), dir, ret0);
+    const remain = pub.remainSec != null ? pub.remainSec : (pub.totalTicks - pub.tick) * this.cfg.tickSec;
+    const total = pub.totalSec != null ? pub.totalSec : pub.totalTicks * this.cfg.tickSec;
+    this.countdown.set(remain, total);
+    const closed = !!pub.marketClosed;
+    this.elClosed.style.display = closed ? '' : 'none';
+    this.chart.root.classList.toggle('closed', closed);
+    this.chart.setAvgEntry(0);
+    this.chart.expectedCandles = Math.ceil(pub.totalTicks / pub.ticksPerCandle);
+    this.chart.setData(prices, this._volsFor(pub), pub.ticksPerCandle, pub.cur);
+    const baseCash = pub.initialCash || this.cfg.initialCash;
+    const board = this.ctrl.tycoonBoard ? this.ctrl.tycoonBoard() : (pub.leaderboard || []);
+    this._renderTycoonBoard(board, baseCash);
+  }
+  _renderTycoonBoard(board, baseCash) {
+    clear(this.elBoard);
+    const base = baseCash || this.cfg.initialCash;
+    board.forEach((p, i) => {
+      const ret = base ? (p.nw / base - 1) * 100 : 0;
+      const posText = p.shares > 0 ? `多 ${p.shares}` : p.shares < 0 ? `空 ${Math.abs(p.shares)}` : '空仓';
+      const posDir = p.shares > 0 ? 'up' : p.shares < 0 ? 'down' : 'flat';
+      this.elBoard.appendChild(tycoonTraderRow({
+        rank: i + 1, name: p.name, posText, posDir,
+        net: fmtCompact(p.nw, this.cur), deltaPct: ret,
+        ai: p.isHuman ? null : 'bot', broke: p.bankrupt,
+      }));
+    });
+  }
+
   // ---------- 操作 ----------
   _setQty(q) { this.qty = Math.max(0, Math.floor(q)); this.elQty.value = String(this.qty); }
   // 按当前真实买入费率估算可买上限（道具免手续费时为 0）
@@ -232,6 +352,7 @@ export class GameUI {
 
   // ---------- 渲染 ----------
   render() {
+    if (this.tycoonHost) { this._renderTycoon(); return; }
     const pub = this.ctrl.public(); if (!pub) return;
     this.cur = pub.cur;
     const prices = pub.prices; const price = prices[prices.length - 1];

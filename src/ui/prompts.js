@@ -79,6 +79,13 @@ export function showModePicker({ current = 'classic' } = {}) {
         '自选休市 / 道具 / 盲盒',
         '适合进阶玩家精调',
       ], false),
+      card('tycoon', 'crown', '懂王模式', '房主控盘 · 你说涨就涨', [
+        '房主亲自操控 K 线涨跌',
+        '在原有走势上叠加 ±50% 趋势',
+        '房主不买卖、不上榜，专心控盘',
+        '散户照常做多 / 做空博弈',
+        '默认 2s 刷新 · 跑 20s 歇 5s',
+      ], false),
     ]);
     ov = openOverlay({ title: '选择玩法模式', bodyNode: body, className: 'wide mode-picker-ov', closable: true, buttons: [
       { label: '取消', onClick: () => { ov.close(); resolve(null); } },

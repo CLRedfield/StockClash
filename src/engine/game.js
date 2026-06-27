@@ -39,7 +39,8 @@ export class GameEngine {
       ? Math.round(this.totalTicks * (this.runLen + this.restLen) / this.runLen)
       : this.totalTicks;
 
-    this.market = new Market({ seed: this.seed, marketKey: asset.marketKey, name: asset.name, symbol: asset.symbol, n, ticksPerCandle: this.ticksPerCandle, windowDays: Math.round(n / 3), blind: cfg.blindMode });
+    this.tycoon = cfg.roomMode === 'tycoon';   // 懂王模式：房主实时控盘
+    this.market = new Market({ seed: this.seed, marketKey: asset.marketKey, name: asset.name, symbol: asset.symbol, n, ticksPerCandle: this.ticksPerCandle, windowDays: Math.round(n / 3), blind: cfg.blindMode, tycoon: this.tycoon });
 
     // 开局金钱：按开盘股价模式 = 倍数 × 开盘 1 股价格（标的揭晓后确定）
     if (cfg.cashMode === 'multiple') {
@@ -64,6 +65,9 @@ export class GameEngine {
   emit(ev, ...a) { this.emitter.emit(ev, ...a); }
   player(id) { return this.players.find((p) => p.id === id); }
   get price() { return this.market.price; }
+  get bias() { return this.market.bias || 0; }
+  // 懂王控盘：设置额外趋势（持续生效，下一根 K 线起叠加到原走势）
+  setBias(pct) { if (!this.tycoon) return 0; return this.market.setBias(pct); }
 
   start() {
     if (this.running) return;
@@ -130,7 +134,9 @@ export class GameEngine {
       for (const p of this.players) {
         if (p.pf.bankrupt) continue;
         if (p.props.length >= this.cfg.propSlots) p.props.shift();
-        const id = rollProp(this.rnd);
+        let id = rollProp(this.rnd);
+        // 懂王模式下「内幕消息」（偷看未来）无意义 —— 未来由房主现场决定，重抽剔除
+        if (this.tycoon) { let g = 0; while (id === 'insider' && g++ < 6) id = rollProp(this.rnd); if (id === 'insider') id = 'feefree'; }
         p.props.push(id);
         this.emit('fx', { kind: 'getprop', id: p.id, propId: id });
       }
@@ -229,6 +235,7 @@ export class GameEngine {
       remainSec: Math.max(0, (this.totalWallTicks - this.wallTick) * this.cfg.tickSec),
       totalSec: this.totalWallTicks * this.cfg.tickSec,
       marketClosed: this.resting,
+      tycoon: this.tycoon,
       initialCash: this.cfg.initialCash,
       prices: this.market.revealedPrices(), ticksPerCandle: this.ticksPerCandle,
       asset: this.cfg.blindMode

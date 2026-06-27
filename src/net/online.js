@@ -1,7 +1,7 @@
 // ====================== 在线联机（公共 MQTT · 房主权威） ======================
 import { el, clear } from '../ui/dom.js';
 import { openOverlay, toast } from '../ui/prompts.js';
-import { DEFAULTS, PRESETS, AI_NAMES, MARKET_KEYS, nextDiff, MAX_ROOM, deriveWindow, applyClassicRules } from '../engine/constants.js';
+import { DEFAULTS, PRESETS, AI_NAMES, MARKET_KEYS, nextDiff, MAX_ROOM, deriveWindow, applyClassicRules, applyTycoonRules } from '../engine/constants.js';
 import { GameEngine } from '../engine/game.js';
 import { pickAsset, randSeed } from '../engine/market.js';
 import { renderRoomView } from '../ui/room.js';
@@ -59,12 +59,15 @@ function promptRoomCode() {
 }
 
 function freshRoom(code, myId, name, mode = 'classic') {
+  const tycoon = mode === 'tycoon';
   const room = {
-    ...structuredClone(DEFAULTS), code, hostId: myId, roomMode: mode,
+    ...structuredClone(DEFAULTS), code, hostId: myId, hostName: name || '房主', roomMode: mode,
     markets: ['cn'], totalSeats: 4, aiDifficulties: {}, allowSeatChange: false,
-    players: [{ id: myId, name: name || '房主' }], status: 'waiting',
+    // 懂王模式：房主不占座位、不进 players（专心控盘）；其余模式房主是 0 号座
+    players: tycoon ? [] : [{ id: myId, name: name || '房主' }], status: 'waiting',
   };
   if (mode === 'classic') applyClassicRules(room);
+  if (tycoon) applyTycoonRules(room);
   return room;
 }
 
@@ -86,7 +89,7 @@ function enterRoom(lobby, code, myId, isHost, mode = 'classic') {
     const spectators = players.slice(cap).map((p) => ({ name: p.name, isYou: p.id === myId }));
     const state = {
       isLocal: false, code, canEdit: isHost, canKick: isHost, canSwap: isHost || room.allowSeatChange,
-      roomMode: room.roomMode,
+      roomMode: room.roomMode, tycoon: room.roomMode === 'tycoon', tycoonHostName: room.hostName,
       markets: room.markets, preset: room.preset, durationSec: room.durationSec, windowLabel: room.windowLabel,
       initialCash: room.initialCash, cashMode: room.cashMode, cashMultiple: room.cashMultiple, feeScale: room.feeScale, loanOrigination: room.loanOrigination, loanAccrual: room.loanAccrual,
       loanAccrualSec: room.loanAccrualSec, maxLeverage: room.maxLeverage, blindMode: room.blindMode, propMode: room.propMode,
@@ -100,7 +103,17 @@ function enterRoom(lobby, code, myId, isHost, mode = 'classic') {
 
   let selectedSeat = null;
   const handlers = () => ({
-    onRoomMode: (mode) => { if (room.roomMode === mode) return; room.roomMode = mode; if (mode === 'classic') applyClassicRules(room); publishLobby(); render(); },
+    onRoomMode: (mode) => {
+      if (room.roomMode === mode) return;
+      const wasT = room.roomMode === 'tycoon', isT = mode === 'tycoon';
+      room.roomMode = mode;
+      // 懂王模式切换：房主退出 / 回到座位
+      if (isT && !wasT) room.players = (room.players || []).filter((p) => p.id !== room.hostId);
+      else if (!isT && wasT) room.players = [{ id: room.hostId, name: room.hostName || '房主' }, ...(room.players || [])];
+      if (mode === 'classic') applyClassicRules(room);
+      if (mode === 'tycoon') applyTycoonRules(room);
+      selectedSeat = null; publishLobby(); render();
+    },
     onMarketToggle: (k) => { const i = room.markets.indexOf(k); if (i >= 0) { if (room.markets.length > 1) room.markets.splice(i, 1); } else room.markets.push(k); publishLobby(); render(); },
     onPreset: (key) => { const p = PRESETS.find((x) => x.key === key); if (p) { room.preset = key; room.durationSec = p.durationSec; room.tickSec = p.tickSec; room.windowLabel = p.windowLabel; } publishLobby(); render(); },
     onEditCash: async () => { const v = await promptNumber({ title: '初始资金', value: room.initialCash, min: 1000, step: 10000 }); if (v) { room.initialCash = v; publishLobby(); render(); } },
@@ -175,7 +188,7 @@ function enterRoom(lobby, code, myId, isHost, mode = 'classic') {
 
     clear(lobby.root);
     const gameRoot = el('div', { class: 'game-root-wrap' }); lobby.root.appendChild(gameRoot);
-    ui = new GameUI(new LocalController(engine, myId), { onEnd: (results) => onGameEnd(engine, results) });
+    ui = new GameUI(new LocalController(engine, myId, { tycoonHost: room.roomMode === 'tycoon' }), { onEnd: (results) => onGameEnd(engine, results) });
     ui.mountInto(gameRoot);
     engine.start();
   };
@@ -184,7 +197,7 @@ function enterRoom(lobby, code, myId, isHost, mode = 'classic') {
     ui?.destroy();
     showSettlement(lobby.root, {
       results, asset: engine.asset, cur: engine.market.cur,
-      prices: engine.market.prices.slice(0, engine.market.cursor + 1), myId,
+      prices: engine.market.revealedPrices(), myId,
       rematchLabel: '再来一局（回房间）',
       onRematch: () => { hub?.stop(); backToRoom(); }, onExit: () => { BUS?.end(); location.reload(); },
     });
@@ -260,7 +273,7 @@ class NetHostHub {
     this._unsubs.push(this.engine.on('tick', () => this.broadcast()));
     this._unsubs.push(this.engine.on('fx', (e) => BUS.pub(this.T.fx, e, { qos: 0 })));
     this._unsubs.push(this.engine.on('end', (results) => {
-      BUS.pub(this.T.end, { results, asset: this.engine.asset, cur: this.engine.market.cur, prices: this.engine.market.prices.slice(0, this.engine.market.cursor + 1) }, { retain: true });
+      BUS.pub(this.T.end, { results, asset: this.engine.asset, cur: this.engine.market.cur, prices: this.engine.market.revealedPrices() }, { retain: true });
     }));
     this._unsubs.push(BUS.sub(this.T.act, (doc) => { if (doc?.playerId && doc.action) this.engine.act(doc.playerId, doc.action); }));
     this.broadcast();

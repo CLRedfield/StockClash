@@ -38,8 +38,10 @@ export function renderRoomView(container, state, h) {
   clear(container);
   const canEdit = state.canEdit;
   const roomMode = state.roomMode || 'custom';
-  // 经典模式：规则锁定，仅 K 线来源与座位可调；自定义模式：全部可调
+  // 经典：规则锁定（仅 K 线来源、座位、时长可调）；自定义 / 懂王：全部可调
+  // 懂王每次切入时由 applyTycoonRules 载入默认，之后房主可自由微调
   const rulesEditable = canEdit && roomMode !== 'classic';
+  const durEditable = rulesEditable;
   const root = el('div', { class: 'room-wrap' });
 
   // ---- 头部 ----
@@ -59,15 +61,18 @@ export function renderRoomView(container, state, h) {
   // ---- 主体两栏 ----
   const grid = el('div', { class: 'room-grid' });
 
-  // 玩法模式：经典（固定规则）/ 自定义（自由调节）—— 点「更换玩法」弹出二选一卡片
-  const modeIsClassic = roomMode === 'classic';
+  // 玩法模式：经典 / 自定义 / 懂王 —— 点「更换玩法」弹出三选一卡片
+  const MODE_META = {
+    classic: { ico: 'trophy', name: '经典模式', desc: '官方推荐配置：1 股 ×100、休市、约 3 个月、道具。规则已锁定。' },
+    custom:  { ico: 'sliders-horizontal', name: '自定义模式', desc: '自由调节下方全部规则。' },
+    tycoon:  { ico: 'crown', name: '懂王模式', desc: '房主实时控盘：原有走势上叠加 ±50% 趋势。房主不买卖、不上榜，下方规则可自由微调。' },
+  };
+  const mm = MODE_META[roomMode] || MODE_META.custom;
   const modeControl = el('div', { class: `mode-banner ${roomMode}` }, [
-    el('span', { class: 'mb-ico' }, [icon(modeIsClassic ? 'trophy' : 'sliders-horizontal', { size: 18 })]),
+    el('span', { class: 'mb-ico' }, [icon(mm.ico, { size: 18 })]),
     el('div', { class: 'mb-text' }, [
-      el('div', { class: 'mb-name', text: modeIsClassic ? '经典模式' : '自定义模式' }),
-      el('div', { class: 'mb-desc', text: modeIsClassic
-        ? '官方推荐配置：1 股 ×100、休市、约 3 个月、道具。规则已锁定。'
-        : '自由调节下方全部规则。' }),
+      el('div', { class: 'mb-name', text: mm.name }),
+      el('div', { class: 'mb-desc', text: mm.desc }),
     ]),
     canEdit ? el('button', { class: 'btn btn-secondary sm mb-change', onclick: async () => {
       const m = await showModePicker({ current: roomMode }); if (m && m !== roomMode) h.onRoomMode?.(m);
@@ -82,7 +87,7 @@ export function renderRoomView(container, state, h) {
   })));
 
   const durControl = durationSlider({
-    value: state.durationSec, disabled: !rulesEditable, onCommit: (sec) => h.onDuration(sec),
+    value: state.durationSec, disabled: !durEditable, onCommit: (sec) => h.onDuration(sec),
     recess: !!state.recessMode, recessRun: state.recessRun, recessRest: state.recessRest,
     opTime: !!state.opTimeMode, opTimeSec: state.opTimeSec,
   });
@@ -149,7 +154,14 @@ export function renderRoomView(container, state, h) {
     onClick: s.kind === 'human' ? () => h.onSeatClick(i) : null,
   })));
 
-  const seatBody = el('div', {}, [seatGrid]);
+  const hostBanner = state.tycoon ? el('div', { class: 'tycoon-host-banner' }, [
+    el('span', { class: 'thb-ico' }, [icon('crown', { size: 16 })]),
+    el('div', { class: 'thb-text' }, [
+      el('div', { class: 'thb-name' }, [document.createTextNode(state.tycoonHostName || '房主'), el('span', { class: 'thb-tag', text: '懂王 · 房主' })]),
+      el('div', { class: 'thb-sub', text: '不参与买卖，专心控盘 · 以下为散户席（其他玩家 + AI）' }),
+    ]),
+  ]) : null;
+  const seatBody = el('div', {}, [hostBanner, seatGrid].filter(Boolean));
   if (canEdit) {
     seatBody.appendChild(el('div', { class: 'seat-counter' }, [
       el('button', { class: 'btn btn-secondary sm', onclick: () => h.onSeatCount(state.totalSeats - 1) }, [document.createTextNode('－ 减 AI')]),
@@ -164,7 +176,7 @@ export function renderRoomView(container, state, h) {
     seatBody.appendChild(el('div', { class: 'room-hint', text: '点你的座位再点目标座位，申请与其互换' }));
   }
   grid.appendChild(el('div', { class: 'card' }, [
-    cardTitle('users', '座位', badge(`${humanCount}/${state.totalSeats}`, 'neutral')),
+    cardTitle('users', state.tycoon ? '散户席' : '座位', badge(`${humanCount}/${state.totalSeats}`, 'neutral')),
     el('div', { class: 'card-body' }, [seatBody]),
   ]));
 

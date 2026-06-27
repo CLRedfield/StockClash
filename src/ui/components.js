@@ -164,6 +164,27 @@ export function leaderboardRow({ rank, name, net, deltaPct = 0, you = false, ai 
   ]);
 }
 
+// ---------- 懂王上帝视角榜单行（显示每个散户的多空持仓） ----------
+// row: { rank, name, posText, posDir('up'|'down'|'flat'), net(text), deltaPct(number), ai, broke }
+export function tycoonTraderRow({ rank, name, posText, posDir = 'flat', net, deltaPct = 0, ai = null, broke = false }) {
+  const dir = deltaPct > 0 ? 'up' : deltaPct < 0 ? 'down' : 'flat';
+  const whoTop = [el('span', { class: 'nm' }, [document.createTextNode(name)])];
+  if (ai) whoTop.push(el('span', { class: 'ai-chip', text: 'AI' }));
+  if (broke) whoTop.push(el('span', { class: 'broke-tag', text: '破产' }));
+  return el('div', { class: `lb-row ty-row ${broke ? 'broke' : ''}` }, [
+    el('span', { class: `rank r${rank}`, text: String(rank) }),
+    el('span', { class: 'ava', text: (name || '?').slice(0, 1) }),
+    el('div', { class: 'who' }, [
+      el('div', { class: 'who-top' }, whoTop),
+      el('span', { class: `ty-pos ${posDir}`, text: posText }),
+    ]),
+    el('div', { class: 'vals' }, [
+      el('div', { class: 'vnw', text: net }),
+      el('div', { class: `vpc ${dir}`, text: (deltaPct > 0 ? '+' : '') + deltaPct.toFixed(1) + '%' }),
+    ]),
+  ]);
+}
+
 // ---------- 统计块（HUD，可更新） ----------
 export function statTile(label, { emphasis = false } = {}) {
   const v = el('div', { class: 'sv' });
